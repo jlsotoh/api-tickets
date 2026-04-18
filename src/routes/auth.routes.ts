@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 
-const router = Router();
+const router: Router = Router();
 
 /**
  * POST /api/auth/token

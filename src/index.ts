@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express } from 'express';
 import cors from 'cors';
 import { env } from './config/env';
 import { authenticateToken } from './middleware/auth';
@@ -8,7 +8,7 @@ import ticketRoutes from './routes/ticket.routes';
 import path from 'path';
 import fs from 'fs';
 
-const app = express();
+const app: Express = express();
 
 // Middlewares globales
 app.use(cors({
