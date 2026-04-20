@@ -20,6 +20,12 @@ const envSchema = z.object({
 
   // CORS Configuration
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000').transform((v) => v.split(',')),
+
+  // FTP DATOS
+  HOST_FTP: z.string().min(1),
+  USER_FTP: z.string().min(1),
+  PASS_FTP: z.string().min(1),
+  URL_TICKETS: z.string().min(1),
 });
 
 const parsed = envSchema.safeParse(process.env);

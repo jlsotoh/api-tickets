@@ -43,7 +43,7 @@ const saveBase64Image = (base64String: string): { url: string, name: string, typ
   const type = matches[1];
   const buffer = Buffer.from(matches[2], 'base64');
   const extension = type.split('/')[1] || 'png';
-  const fileName = `photo-${uuidv4()}.${extension}`;
+  const fileName = `evidence-${uuidv4()}.${extension}`;
   const filePath = path.join(process.cwd(), 'uploads', fileName);
 
   fs.writeFileSync(filePath, buffer);
@@ -77,7 +77,7 @@ router.get('/categories', async (_req: Request, res: Response): Promise<void> =>
  * POST /api/tickets
  * Crear un nuevo ticket (Soporta JSON y Multipart/form-data)
  */
-router.post('/', upload.single('photo'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', upload.single('evidence'), async (req: Request, res: Response): Promise<void> => {
   const result = createTicketSchema.safeParse(req.body);
 
   if (!result.success) {
@@ -86,23 +86,23 @@ router.post('/', upload.single('photo'), async (req: Request, res: Response): Pr
   }
 
   try {
-    let photoData = undefined;
+    let evidenceData = undefined;
 
     // 1. Manejar archivo enviado vía Multer (Multipart)
     if (req.file) {
-      photoData = {
+      evidenceData = {
         name: req.file.filename,
         type: req.file.mimetype,
         url: `/uploads/${req.file.filename}`,
         size: `${req.file.size}`
       };
     } 
-    // 2. Manejar foto enviada como Base64 (JSON)
-    else if (result.data.photo && typeof result.data.photo === 'string' && result.data.photo.startsWith('data:image')) {
-      photoData = saveBase64Image(result.data.photo);
+    // 2. Manejar evidencia enviada como Base64 (JSON)
+    else if (result.data.evidence && typeof result.data.evidence === 'string' && result.data.evidence.startsWith('data:image')) {
+      evidenceData = saveBase64Image(result.data.evidence);
     }
 
-    const ticket = await ticketService.createTicket(result.data, photoData);
+    const ticket = await ticketService.createTicket(result.data, evidenceData);
     res.status(201).json(ticket);
   } catch (error: any) {
     console.error('Error creating ticket:', error);
