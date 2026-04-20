@@ -29,7 +29,22 @@ export const ticketService = {
 
     query += ' ORDER BY created_at DESC';
     const result = await request.query(query);
-    return result.recordset;
+    const tickets = result.recordset as Ticket[];
+
+    if (tickets.length === 0) return [];
+
+    // Fetch attachments for all retrieved tickets
+    const ticketIds = tickets.map(t => t.id);
+    const attachmentsResult = await pool.request()
+      .query(`SELECT * FROM tbl_S_qualitor_tickets_attachments WHERE idTicket IN (${ticketIds.join(',')})`);
+    
+    const attachments = attachmentsResult.recordset;
+
+    // Map attachments to tickets
+    return tickets.map(ticket => ({
+      ...ticket,
+      attachments: attachments.filter((a: any) => a.idTicket === ticket.id)
+    }));
   },
 
   getTicketById: async (id: number): Promise<Ticket | null> => {
@@ -37,7 +52,12 @@ export const ticketService = {
     const result = await pool.request()
       .input('id', mssql.Int, id)
       .query('SELECT * FROM tbl_S_qualitor_tickets_records WHERE id = @id');
-    return result.recordset[0] || null;
+    
+    const ticket = result.recordset[0] as Ticket || null;
+    if (ticket) {
+      ticket.attachments = await ticketService.getAttachmentsByTicketId(ticket.id);
+    }
+    return ticket;
   },
 
   getTicketByUid: async (uid: string): Promise<Ticket | null> => {
@@ -45,7 +65,12 @@ export const ticketService = {
     const result = await pool.request()
       .input('uid', mssql.NVarChar, uid)
       .query('SELECT * FROM tbl_S_qualitor_tickets_records WHERE uid = @uid');
-    return result.recordset[0] || null;
+    
+    const ticket = result.recordset[0] as Ticket || null;
+    if (ticket) {
+      ticket.attachments = await ticketService.getAttachmentsByTicketId(ticket.id);
+    }
+    return ticket;
   },
 
   createTicket: async (data: any, evidenceData?: { name: string, type: string, url: string, size?: string }): Promise<Ticket & { evidenceUrl?: string }> => {
@@ -184,6 +209,14 @@ export const ticketService = {
     const result = await pool.request()
       .input('ticketId', mssql.Int, ticketId)
       .query('SELECT * FROM tbl_S_qualitor_tickets_activities WHERE idTicket = @ticketId ORDER BY created_at DESC');
+    return result.recordset;
+  },
+
+  getAttachmentsByTicketId: async (ticketId: number): Promise<any[]> => {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('ticketId', mssql.Int, ticketId)
+      .query('SELECT * FROM tbl_S_qualitor_tickets_attachments WHERE idTicket = @ticketId');
     return result.recordset;
   }
 };

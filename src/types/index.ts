@@ -19,6 +19,7 @@ export interface Ticket {
   status: TicketStatus;
   created_at: string;
   updated_at?: string;
+  attachments?: TicketAttachment[];
 }
 
 export interface TicketAttachment {
