@@ -6,55 +6,9 @@ import {
   createActivitySchema,
   queryTicketsSchema,
 } from '../schemas/ticket.schema';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+
 
 const router: Router = Router();
-
-// Configuración de Multer
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-});
-
-/** Helper para guardar base64 como archivo */
-const saveBase64Image = (base64String: string): { url: string, name: string, type: string, size: string } => {
-  const matches = base64String.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
-  if (!matches || matches.length !== 3) {
-    throw new Error('Formato base64 inválido');
-  }
-
-  const type = matches[1];
-  const buffer = Buffer.from(matches[2], 'base64');
-  const extension = type.split('/')[1] || 'png';
-  const fileName = `evidence-${uuidv4()}.${extension}`;
-  const filePath = path.join(process.cwd(), 'uploads', fileName);
-
-  fs.writeFileSync(filePath, buffer);
-
-  return {
-    url: `/uploads/${fileName}`,
-    name: fileName,
-    type,
-    size: `${buffer.length}`
-  };
-};
 
 /** Helper para extraer param como string o number */
 const paramAsString = (param: string | string[]): string =>
@@ -77,7 +31,7 @@ router.get('/categories', async (_req: Request, res: Response): Promise<void> =>
  * POST /api/tickets
  * Crear un nuevo ticket
  */
-router.post('/', upload.none(), async (req: Request, res: Response): Promise<void> => {
+router.post('/', async (req: Request, res: Response): Promise<void> => {
   const result = createTicketSchema.safeParse(req.body);
 
   if (!result.success) {
@@ -98,19 +52,21 @@ router.post('/', upload.none(), async (req: Request, res: Response): Promise<voi
  * POST /api/tickets/:id/attachments
  * Registrar evidencia para un ticket existente
  */
-router.post('/:id/attachments', upload.single('evidence'), async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/attachments', async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(paramAsString(req.params.id), 10);
-  
-  if (!req.file) {
-    res.status(400).json({ error: 'No se subió ningún archivo' });
+  const { url, name, type, size } = req.body;
+
+  if (!url) {
+    res.status(400).json({ error: 'La URL de la evidencia es requerida' });
     return;
   }
 
   try {
     const evidenceData = {
-      name: req.file.filename,
-      type: req.file.mimetype,
-      size: `${req.file.size}`
+      url,
+      name: name || 'Evidencia',
+      type: type || 'image/jpeg',
+      size: size || null
     };
 
     const attachment = await ticketService.addAttachment(id, evidenceData);
