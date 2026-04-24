@@ -96,28 +96,21 @@ router.post('/', upload.none(), async (req: Request, res: Response): Promise<voi
 
 /**
  * POST /api/tickets/:id/attachments
- * Registrar evidencia para un ticket existente (El archivo se guarda en el UI)
+ * Registrar evidencia para un ticket existente
  */
-router.post('/:id/attachments', upload.none(), async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/attachments', upload.single('evidence'), async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(paramAsString(req.params.id), 10);
   
-  if (!req.body) {
-    res.status(400).json({ error: 'Cuerpo de solicitud requerido' });
-    return;
-  }
-
-  const { name, type, size } = req.body;
-
-  if (!name) {
-    res.status(400).json({ error: 'El nombre de la evidencia es requerido' });
+  if (!req.file) {
+    res.status(400).json({ error: 'No se subió ningún archivo' });
     return;
   }
 
   try {
     const evidenceData = {
-      name,
-      type: type || 'image/jpeg',
-      size: size || null
+      name: req.file.filename,
+      type: req.file.mimetype,
+      size: `${req.file.size}`
     };
 
     const attachment = await ticketService.addAttachment(id, evidenceData);
