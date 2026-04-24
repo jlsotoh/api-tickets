@@ -1,5 +1,6 @@
 import mssql from 'mssql';
-
+import path from 'path';
+import fs from 'fs';
 import { env } from '../config/env';
 import { Ticket, TicketCategory, TicketActivity, TicketStatus } from '../types';
 import { poolPromise } from '../config/database';
@@ -71,7 +72,7 @@ export const ticketService = {
     return ticket;
   },
 
-  createTicket: async (data: any): Promise<Ticket & { evidenceUrl?: string }> => {
+  createTicket: async (data: any): Promise<Ticket> => {
     const pool = await poolPromise;
     const transaction = new mssql.Transaction(pool);
 
@@ -91,44 +92,47 @@ export const ticketService = {
         `);
 
       const ticket = result.recordset[0];
-      let evidenceUrl = undefined;
-
-      if (ticket && data.evidenceUrl) {
-        evidenceUrl = data.evidenceUrl;
-        await transaction.request()
-          .input('idTicket', mssql.Int, ticket.id)
-          .input('name', mssql.NVarChar, data.evidenceName || 'Evidencia')
-          .input('type', mssql.NVarChar, data.evidenceType || 'image/jpeg')
-          .input('url', mssql.NVarChar, evidenceUrl)
-          .query(`
-            INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url)
-            VALUES (@idTicket, @name, @type, @url)
-          `);
-      }
-
       await transaction.commit();
-      return { ...ticket, evidenceUrl };
+      return ticket;
     } catch (error) {
       await transaction.rollback();
       throw error;
     }
   },
 
-  addAttachment: async (ticketId: number, evidenceData: { name: string, type: string, url: string, size?: string }): Promise<{ url: string, name: string }> => {
+  addAttachment: async (ticketId: number, evidenceData: { name: string, type: string, size?: string }): Promise<{ url: string, name: string }> => {
     const pool = await poolPromise;
 
+    // 1. Crear directorio por ticket id si no existe
+    const ticketDir = path.join(process.cwd(), 'uploads', 'tickets', String(ticketId));
+    if (!fs.existsSync(ticketDir)) {
+      fs.mkdirSync(ticketDir, { recursive: true });
+    }
+
+    // 2. Mover archivo de uploads/ a uploads/tickets/{id}/
+    const tempPath = path.join(process.cwd(), 'uploads', evidenceData.name);
+    const finalPath = path.join(ticketDir, evidenceData.name);
+
+    if (fs.existsSync(tempPath)) {
+      fs.renameSync(tempPath, finalPath);
+    }
+
+    // 3. Construir URL local
+    const evidenceUrl = `/uploads/tickets/${ticketId}/${evidenceData.name}`;
+
+    // 4. Guardar en la base de datos
     await pool.request()
       .input('idTicket', mssql.Int, ticketId)
       .input('name', mssql.NVarChar, evidenceData.name)
       .input('type', mssql.NVarChar, evidenceData.type)
-      .input('url', mssql.NVarChar, evidenceData.url)
+      .input('url', mssql.NVarChar, evidenceUrl)
       .input('size', mssql.NVarChar, evidenceData.size || null)
       .query(`
         INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url, size)
         VALUES (@idTicket, @name, @type, @url, @size)
       `);
 
-    return { url: evidenceData.url, name: evidenceData.name };
+    return { url: evidenceUrl, name: evidenceData.name };
   },
 
   updateStatus: async (id: number, status: string, author: string, authorRole: string): Promise<Ticket | null> => {
