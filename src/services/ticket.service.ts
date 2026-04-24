@@ -1,6 +1,6 @@
 import mssql from 'mssql';
-import path from 'path';
-import fs from 'fs';
+import SftpClient from 'ssh2-sftp-client';
+
 import { env } from '../config/env';
 import { Ticket, TicketCategory, TicketActivity, TicketStatus } from '../types';
 import { poolPromise } from '../config/database';
@@ -100,39 +100,47 @@ export const ticketService = {
     }
   },
 
-  addAttachment: async (ticketId: number, evidenceData: { name: string, type: string, size?: string }): Promise<{ url: string, name: string }> => {
-    const pool = await poolPromise;
+  addAttachment: async (ticketId: number, file: Express.Multer.File): Promise<{ url: string, name: string }> => {
+    const sftp = new SftpClient();
+    const fileName = `${Date.now()}-${file.originalname}`;
+    const remoteDir = `/uploads/tickets/${ticketId}`;
+    const remotePath = `${remoteDir}/${fileName}`;
 
-    // 1. Crear directorio por ticket id si no existe
-    const ticketDir = path.join(process.cwd(), 'uploads', 'tickets', String(ticketId));
-    if (!fs.existsSync(ticketDir)) {
-      fs.mkdirSync(ticketDir, { recursive: true });
+    try {
+      await sftp.connect({
+        host: env.HOST_FTP,
+        username: env.USER_FTP,
+        password: env.PASS_FTP,
+      });
+
+      // Asegurar que el directorio existe
+      await sftp.mkdir(remoteDir, true);
+
+      // Subir el archivo
+      await sftp.put(file.buffer, remotePath);
+
+      // Construir la URL pública (asumiendo que env.URL_TICKETS es la base)
+      const url = `${env.URL_TICKETS}${ticketId}/${fileName}`;
+
+      const pool = await poolPromise;
+      await pool.request()
+        .input('idTicket', mssql.Int, ticketId)
+        .input('name', mssql.NVarChar, file.originalname)
+        .input('type', mssql.NVarChar, file.mimetype)
+        .input('url', mssql.NVarChar, url)
+        .input('size', mssql.NVarChar, file.size.toString())
+        .query(`
+          INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url, size)
+          VALUES (@idTicket, @name, @type, @url, @size)
+        `);
+
+      return { url, name: file.originalname };
+    } catch (error: any) {
+      console.error('Error uploading to SFTP:', error);
+      throw new Error(`Error al subir archivo al servidor SFTP: ${error.message}`);
+    } finally {
+      await sftp.end();
     }
-
-    // 2. Mover archivo de uploads/ a uploads/tickets/{id}/
-    const tempPath = path.join(process.cwd(), 'uploads', evidenceData.name);
-    const finalPath = path.join(ticketDir, evidenceData.name);
-
-    if (fs.existsSync(tempPath)) {
-      fs.renameSync(tempPath, finalPath);
-    }
-
-    // 3. Construir URL local
-    const evidenceUrl = `/uploads/tickets/${ticketId}/${evidenceData.name}`;
-
-    // 4. Guardar en la base de datos
-    await pool.request()
-      .input('idTicket', mssql.Int, ticketId)
-      .input('name', mssql.NVarChar, evidenceData.name)
-      .input('type', mssql.NVarChar, evidenceData.type)
-      .input('url', mssql.NVarChar, evidenceUrl)
-      .input('size', mssql.NVarChar, evidenceData.size || null)
-      .query(`
-        INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url, size)
-        VALUES (@idTicket, @name, @type, @url, @size)
-      `);
-
-    return { url: evidenceUrl, name: evidenceData.name };
   },
 
   updateStatus: async (id: number, status: string, author: string, authorRole: string): Promise<Ticket | null> => {

@@ -22,9 +22,9 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000').transform((v) => v.split(',')),
 
   // FTP DATOS
-  HOST_FTP: z.string().optional(),
-  USER_FTP: z.string().optional(),
-  PASS_FTP: z.string().optional(),
+  HOST_FTP: z.string().min(1),
+  USER_FTP: z.string().min(1),
+  PASS_FTP: z.string().min(1),
   URL_TICKETS: z.string().min(1),
 });
 

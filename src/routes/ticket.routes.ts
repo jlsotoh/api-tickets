@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import { ticketService } from '../services/ticket.service';
 import {
   createTicketSchema,
@@ -8,32 +9,24 @@ import {
 } from '../schemas/ticket.schema';
 
 
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+
 
 const router: Router = Router();
-
-// Configuración de Multer
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
   },
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten archivos de imagen'));
+    }
   }
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-});
+
 
 /** Helper para extraer param como string o number */
 const paramAsString = (param: string | string[]): string =>
@@ -77,22 +70,17 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
  * POST /api/tickets/:id/attachments
  * Registrar evidencia para un ticket existente
  */
-router.post('/:id/attachments', upload.single('evidence'), async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/attachments', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(paramAsString(req.params.id), 10);
-  
-  if (!req.file) {
-    res.status(400).json({ error: 'No se subió ningún archivo' });
+  const file = req.file;
+
+  if (!file) {
+    res.status(400).json({ error: 'El archivo de imagen es requerido' });
     return;
   }
 
   try {
-    const evidenceData = {
-      name: req.file.filename,
-      type: req.file.mimetype,
-      size: `${req.file.size}`
-    };
-
-    const attachment = await ticketService.addAttachment(id, evidenceData);
+    const attachment = await ticketService.addAttachment(id, file);
     res.status(201).json(attachment);
   } catch (error: any) {
     console.error('Error registering attachment:', error);
