@@ -77,7 +77,7 @@ router.get('/categories', async (_req: Request, res: Response): Promise<void> =>
  * POST /api/tickets
  * Crear un nuevo ticket
  */
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', upload.none(), async (req: Request, res: Response): Promise<void> => {
   const result = createTicketSchema.safeParse(req.body);
 
   if (!result.success) {
@@ -98,8 +98,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
  * POST /api/tickets/:id/attachments
  * Registrar evidencia para un ticket existente (El archivo se guarda en el UI)
  */
-router.post('/:id/attachments', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/attachments', upload.none(), async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(paramAsString(req.params.id), 10);
+  
+  if (!req.body) {
+    res.status(400).json({ error: 'Cuerpo de solicitud requerido' });
+    return;
+  }
+
   const { name, type, size } = req.body;
 
   if (!name) {
