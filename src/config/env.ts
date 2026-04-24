@@ -8,7 +8,7 @@ const envSchema = z.object({
   API_KEY: z.string().min(1, 'API_KEY es requerida'),
   JWT_SECRET: z.string().min(1, 'JWT_SECRET es requerido'),
   JWT_EXPIRATION: z.string().default('24h'),
-  
+
   // Database Configuration
   DB_USER: z.string().min(1),
   DB_PASSWORD: z.string().min(1),
@@ -22,9 +22,9 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000').transform((v) => v.split(',')),
 
   // FTP DATOS
-  HOST_FTP: z.string().min(1),
-  USER_FTP: z.string().min(1),
-  PASS_FTP: z.string().min(1),
+  HOST_FTP: z.string().optional(),
+  USER_FTP: z.string().optional(),
+  PASS_FTP: z.string().optional(),
   URL_TICKETS: z.string().min(1),
 });
 

@@ -1,10 +1,7 @@
 import mssql from 'mssql';
-import * as ftp from 'basic-ftp';
-import path from 'path';
-import fs from 'fs';
-import { env } from '../config/env';
-import { poolPromise } from '../config/database';
+
 import { Ticket, TicketCategory, TicketActivity, TicketStatus } from '../types';
+import { poolPromise } from '../config/database';
 
 export const ticketService = {
   getAllCategories: async (): Promise<TicketCategory[]> => {
@@ -37,7 +34,7 @@ export const ticketService = {
     const ticketIds = tickets.map(t => t.id);
     const attachmentsResult = await pool.request()
       .query(`SELECT * FROM tbl_S_qualitor_tickets_attachments WHERE idTicket IN (${ticketIds.join(',')})`);
-    
+
     const attachments = attachmentsResult.recordset;
 
     // Map attachments to tickets
@@ -52,7 +49,7 @@ export const ticketService = {
     const result = await pool.request()
       .input('id', mssql.Int, id)
       .query('SELECT * FROM tbl_S_qualitor_tickets_records WHERE id = @id');
-    
+
     const ticket = result.recordset[0] as Ticket || null;
     if (ticket) {
       ticket.attachments = await ticketService.getAttachmentsByTicketId(ticket.id);
@@ -65,7 +62,7 @@ export const ticketService = {
     const result = await pool.request()
       .input('uid', mssql.NVarChar, uid)
       .query('SELECT * FROM tbl_S_qualitor_tickets_records WHERE uid = @uid');
-    
+
     const ticket = result.recordset[0] as Ticket || null;
     if (ticket) {
       ticket.attachments = await ticketService.getAttachmentsByTicketId(ticket.id);
@@ -73,7 +70,7 @@ export const ticketService = {
     return ticket;
   },
 
-  createTicket: async (data: any, evidenceData?: { name: string, type: string, url: string, size?: string }): Promise<Ticket & { evidenceUrl?: string }> => {
+  createTicket: async (data: any): Promise<Ticket & { evidenceUrl?: string }> => {
     const pool = await poolPromise;
     const transaction = new mssql.Transaction(pool);
 
@@ -95,57 +92,19 @@ export const ticketService = {
       const ticket = result.recordset[0];
       let evidenceUrl = undefined;
 
-      if (ticket && evidenceData) {
-        const client = new ftp.Client();
-        client.ftp.verbose = false;
+      if (ticket && data.evidence && typeof data.evidence === 'string') {
+        const evidenceName = data.evidence;
+        evidenceUrl = `/uploads/${ticket.id}/${evidenceName}`;
 
-        try {
-          // Conectar al FTP
-          await client.access({
-            host: env.HOST_FTP,
-            user: env.USER_FTP,
-            password: env.PASS_FTP,
-            port: 21,
-            secure: false
-          });
-
-          // Crear carpeta por ticket id
-          const remoteDir = `codigos/${ticket.id}`;
-          await client.ensureDir(remoteDir);
-
-          // Subir archivo
-          const localFilePath = path.join(process.cwd(), 'uploads', evidenceData.name);
-          await client.uploadFrom(localFilePath, evidenceData.name);
-
-          // Construir URL final: URL_TICKETS/idTicket/nombrearchivo
-          let baseUrl = env.URL_TICKETS;
-          if (baseUrl.endsWith('/')) {
-            baseUrl = baseUrl.slice(0, -1);
-          }
-          evidenceUrl = `${baseUrl}/${ticket.id}/${evidenceData.name}`;
-
-          // Guardar en la base de datos con la URL de FTP
-          await transaction.request()
-            .input('idTicket', mssql.Int, ticket.id)
-            .input('name', mssql.NVarChar, evidenceData.name)
-            .input('type', mssql.NVarChar, evidenceData.type)
-            .input('url', mssql.NVarChar, evidenceUrl)
-            .input('size', mssql.NVarChar, evidenceData.size || null)
-            .query(`
-              INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url, size)
-              VALUES (@idTicket, @name, @type, @url, @size)
-            `);
-
-          // Eliminar archivo local después de subirlo
-          if (fs.existsSync(localFilePath)) {
-            fs.unlinkSync(localFilePath);
-          }
-        } catch (ftpError) {
-          console.error('Error in FTP upload:', ftpError);
-          throw new Error('No se pudo subir el archivo al servidor FTP. El ticket no fue creado.');
-        } finally {
-          client.close();
-        }
+        await transaction.request()
+          .input('idTicket', mssql.Int, ticket.id)
+          .input('name', mssql.NVarChar, evidenceName)
+          .input('type', mssql.NVarChar, 'image/jpeg')
+          .input('url', mssql.NVarChar, evidenceUrl)
+          .query(`
+            INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url)
+            VALUES (@idTicket, @name, @type, @url)
+          `);
       }
 
       await transaction.commit();
@@ -154,6 +113,26 @@ export const ticketService = {
       await transaction.rollback();
       throw error;
     }
+  },
+
+  addAttachment: async (ticketId: number, evidenceData: { name: string, type: string, size?: string }): Promise<{ url: string, name: string }> => {
+    const pool = await poolPromise;
+
+    // Solo construimos la URL y guardamos el registro (el archivo se guarda en el UI)
+    const evidenceUrl = `/uploads/${ticketId}/${evidenceData.name}`;
+
+    await pool.request()
+      .input('idTicket', mssql.Int, ticketId)
+      .input('name', mssql.NVarChar, evidenceData.name)
+      .input('type', mssql.NVarChar, evidenceData.type)
+      .input('url', mssql.NVarChar, evidenceUrl)
+      .input('size', mssql.NVarChar, evidenceData.size || null)
+      .query(`
+        INSERT INTO tbl_S_qualitor_tickets_attachments (idTicket, name, type, url, size)
+        VALUES (@idTicket, @name, @type, @url, @size)
+      `);
+
+    return { url: evidenceUrl, name: evidenceData.name };
   },
 
   updateStatus: async (id: number, status: string, author: string, authorRole: string): Promise<Ticket | null> => {

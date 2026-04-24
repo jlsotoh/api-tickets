@@ -28,7 +28,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
@@ -75,9 +75,9 @@ router.get('/categories', async (_req: Request, res: Response): Promise<void> =>
 
 /**
  * POST /api/tickets
- * Crear un nuevo ticket (Soporta JSON y Multipart/form-data)
+ * Crear un nuevo ticket
  */
-router.post('/', upload.single('evidence'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', async (req: Request, res: Response): Promise<void> => {
   const result = createTicketSchema.safeParse(req.body);
 
   if (!result.success) {
@@ -86,27 +86,39 @@ router.post('/', upload.single('evidence'), async (req: Request, res: Response):
   }
 
   try {
-    let evidenceData = undefined;
-
-    // 1. Manejar archivo enviado vía Multer (Multipart)
-    if (req.file) {
-      evidenceData = {
-        name: req.file.filename,
-        type: req.file.mimetype,
-        url: `/uploads/${req.file.filename}`,
-        size: `${req.file.size}`
-      };
-    } 
-    // 2. Manejar evidencia enviada como Base64 (JSON)
-    else if (result.data.evidence && typeof result.data.evidence === 'string' && result.data.evidence.startsWith('data:image')) {
-      evidenceData = saveBase64Image(result.data.evidence);
-    }
-
-    const ticket = await ticketService.createTicket(result.data, evidenceData);
+    const ticket = await ticketService.createTicket(result.data);
     res.status(201).json(ticket);
   } catch (error: any) {
     console.error('Error creating ticket:', error);
     res.status(500).json({ error: 'Error al crear el ticket', message: error.message });
+  }
+});
+
+/**
+ * POST /api/tickets/:id/attachments
+ * Registrar evidencia para un ticket existente (El archivo se guarda en el UI)
+ */
+router.post('/:id/attachments', async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(paramAsString(req.params.id), 10);
+  const { name, type, size } = req.body;
+
+  if (!name) {
+    res.status(400).json({ error: 'El nombre de la evidencia es requerido' });
+    return;
+  }
+
+  try {
+    const evidenceData = {
+      name,
+      type: type || 'image/jpeg',
+      size: size || null
+    };
+
+    const attachment = await ticketService.addAttachment(id, evidenceData);
+    res.status(201).json(attachment);
+  } catch (error: any) {
+    console.error('Error registering attachment:', error);
+    res.status(500).json({ error: 'Error al registrar la evidencia', message: error.message });
   }
 });
 
